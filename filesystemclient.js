@@ -262,9 +262,27 @@ function FileSystemClient() {
 			return;
 		}
 		
-		if (fs.existsSync(m_data_path+'/'+relpath)) fs.unlinkSync(m_data_path+'/'+relpath);
-		var TT=new TFSClient();
-		TT.download({path:m_data_path+'/'+relpath,checksum:checksum},callback);
+		//first check to see if checksum already matches
+		
+		
+		if (fs.existsSync(m_data_path+'/'+relpath)) {
+			compute_file_checksum(m_data_path+'/'+relpath,function(tmp1) {
+				if ((tmp1.success)&&(tmp1.checksum==checksum)) {
+					//checksum already matches, no need to download
+					callback({success:true});
+				}
+				else {
+					fs.unlinkSync(m_data_path+'/'+relpath);
+					next_step();
+				}
+			});
+		}
+		else next_step();
+		
+		function next_step() {
+			var TT=new TFSClient();
+			TT.download({path:m_data_path+'/'+relpath,checksum:checksum},callback);
+		}
 	}
 	function compute_file_checksum(path,callback) {
 		var hash=crypto.createHash('sha1');
