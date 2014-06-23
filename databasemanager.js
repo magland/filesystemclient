@@ -1,6 +1,5 @@
 
 var mongo=require('mongodb');
-var common=require('./common').common;
 
 var m_databases={};
 
@@ -111,13 +110,21 @@ function DatabaseManager(database_name,database_port) {
 		});
 	}
 	
+	function make_random_id(numchars) {
+		if (!numchars) numchars=10;
+		var text = "";
+		var possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+		for( var i=0; i < numchars; i++ ) text += possible.charAt(Math.floor(Math.random() * possible.length));	
+		return text;
+	}
+	
 	
 	function initialize_operation(callback) {
 		open_database_if_needed(function(tmp1) {
 			if (!tmp1.success) {
 				callback(tmp1); return;
 			}
-			var operation_id=common.make_random_id();
+			var operation_id=make_random_id();
 			m_current_operations[operation_id]={time_started:new Date()};
 			callback({success:true,operation_id:operation_id});
 		});

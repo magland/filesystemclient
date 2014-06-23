@@ -3,7 +3,7 @@ var DATABASE=require('./databasemanager').DATABASE;
 var fs=require('fs');
 var crypto=require('crypto');
 var wisdmconfig=require('./wisdmconfig').wisdmconfig;
-var common=require('./common').common;
+var TFSClient=require('./tfsclient.js').TFSClient;
 
 function FileSystemClient() {
 	this.setClientId=function(id) {m_client_id=id;};
@@ -69,23 +69,26 @@ function FileSystemClient() {
 	function _disconnectFromServer() {
 	}
 	function _checkPaths(callback) {
-		common.mkdir(m_data_path,function(tmpA) {
-			fs.exists(m_data_path,function(exists0) {
-				if (!exists0) {
-					callback({success:false,error:'Data path does not exist: '+m_data_path});
+		try {
+			fs.mkdirSync(m_data_path);
+		}
+		catch(err) {
+		}
+		fs.exists(m_data_path,function(exists0) {
+			if (!exists0) {
+				callback({success:false,error:'Data path does not exist: '+m_data_path});
+				return;
+			}
+			fs.stat(m_data_path,function(err,stat) {
+				if (err) {
+					callback({success:false,error:'Error in stat: '+err});
 					return;
 				}
-				fs.stat(m_data_path,function(err,stat) {
-					if (err) {
-						callback({success:false,error:'Error in stat: '+err});
-						return;
-					}
-					if (!stat.isDirectory()) {
-						callback({success:false,error:'Data path is not a directory.'});
-						return;
-					}
-					callback({success:true});
-				});
+				if (!stat.isDirectory()) {
+					callback({success:false,error:'Data path is not a directory.'});
+					return;
+				}
+				callback({success:true});
 			});
 		});
 	}
@@ -174,44 +177,8 @@ function FileSystemClient() {
 		if (command=='getFileChecksum') {
 			get_file_checksum(request.path,callback);
 		}
-		else if (command=='getFileText') {
-			get_path_for_request(request,function(tmpA) {
-				if (!tmpA.success) {
-					callback(tmpA); return;
-				}
-				read_text_file(m_data_path+'/'+tmpA.path,callback);
-			});
-		}
-		else if (command=='setFileText') {
-			if (!create_path_for_file(request.path)) {
-				callback({success:false,error:'Unable to create path.'});
-				return;
-			}
-			write_text_file(m_data_path+'/'+request.path,request.text,callback);
-		}
-		else if (command=='getFileData') {
-			get_path_for_request(request,function(tmpA) {
-				if (!tmpA.success) {
-					callback(tmpA); return;
-				}
-				read_binary_file(m_data_path+'/'+tmpA.path,function(tmpB) {
-					if (tmpB.success) {
-						tmpB.data_base64=tmpB.data.toString('base64');
-						delete tmpB.data;
-					}
-					callback(tmpB);
-				});
-			});
-		}
-		else if (command=='setFileData') {
-			if (request.data_base64) {
-				request.data=new Buffer(request.data_base64,'base64');
-			}
-			if (!create_path_for_file(request.path)) {
-				callback({success:false,error:'Unable to create path.'});
-				return;
-			}
-			write_binary_file(m_data_path+'/'+request.path,request.data,callback);
+		else if (command=='setFileChecksum') {
+			set_file_checksum(request.path,request.checksum,callback);
 		}
 		else if (command=='readDir') {
 			callback({success:false,error:'readDir not yet implemented'});
@@ -220,12 +187,9 @@ function FileSystemClient() {
 		else if (command=='removeFile') {
 			remove_file(_data_path+'/'+request.path,callback);
 		}
-		else if (command=='getFileBytes') {
-			callback({success:false,error:'getFileBytes not yet implemented'});
-		}
 		else if (command=='updateFileSystemSource') {
 			var spawn=require('child_process').spawn;
-			var git_process=spawn('/usr/bin/git',['pull'],{cwd:common.get_file_path(__dirname),stdio:'inherit'});
+			var git_process=spawn('/usr/bin/git',['pull'],{cwd:get_file_path(__dirname),stdio:'inherit'});
 			git_process.on('close',function() {
 				that.closeWhenReady();
 			});
@@ -245,38 +209,13 @@ function FileSystemClient() {
 		else {
 			callback({success:false,error:'Unrecognized or missing server request command: '+command});
 		}
+	}	
+	function get_file_path(str) {
+		if (!str) return '';
+		var ind=str.lastIndexOf('/');
+		if (ind>=0) return str.substr(0,ind);
+		else return '';
 	}
-	
-	function get_path_for_request(request,callback) {
-		if (request.path) {
-			callback({success:true,path:request.path});
-		}
-		else if (request.checksum) {
-			var DB=DATABASE('fs_'+m_client_id);
-			DB.setCollection('checksums');
-			DB.find({checksum:request.checksum},{_id:1,mtime:1,size:1},function(err,docs) {
-				if (err) {
-					callback({success:false,error:err});
-					return;
-				}
-				for (var i=0; i<docs.length; i++) {
-					var doc=docs[i];
-					var relpath=doc._id;
-					var stats=get_file_stats(m_data_path+'/'+relpath);
-					if ((stats)&&(stats.mtime=doc.mtime)&&(stats.size=doc.size)) {
-						callback({success:true,path:relpath});
-						return;
-					}
-				}
-				callback({success:true,error:'file with checksum does not exist.'});
-			});
-			
-		}
-		else {
-			callback({success:false,error:'path and checksum are both empty.'});
-		}
-	}
-	
 	function get_file_checksum(relpath,callback) {
 		var stats=get_file_stats(m_data_path+'/'+relpath);
 		if (!stats) {
@@ -293,11 +232,11 @@ function FileSystemClient() {
 			var doc=docs[0];
 			if (doc) {
 				if ((doc.mtime==stats.mtime)&&(doc.size==stats.size)) {
-					callback({success:true,checksum:doc.checksum});
+					next_step(doc.checksum);
 					return;
 				}
 			}
-			common.get_file_checksum(m_data_path+'/'+relpath,function(tmpB) {
+			compute_file_checksum(m_data_path+'/'+relpath,function(tmpB) {
 				if (!tmpB.success) {
 					callback(tmpB);
 					return;
@@ -307,12 +246,33 @@ function FileSystemClient() {
 						callback({success:false,error:err.message});
 						return;
 					}
-					callback({success:true,checksum:tmpB.checksum});
+					next_step(tmpB.checksum);
 				});
 			});
 		});
+		
+		function next_step(checksum) {
+			var TT=new TFSClient();
+			TT.upload({path:m_data_path+'/'+relpath,checksum:checksum},callback);
+		}
 	}
-	
+	function set_file_checksum(relpath,checksum,callback) {
+		if (!create_path_for_file(relpath)) {
+			callback({success:false,error:'Unable to create path for file: '+relpath});
+			return;
+		}
+		
+		if (fs.existsSync(m_data_path+'/'+relpath)) fs.unlinkSync(m_data_path+'/'+relpath);
+		var TT=new TFSClient();
+		TT.download({path:m_data_path+'/'+relpath,checksum:checksum},callback);
+	}
+	function compute_file_checksum(path,callback) {
+		var hash=crypto.createHash('sha1');
+		var stream=fs.createReadStream(path);
+		stream.on('data',function(d) {hash.update(d);});
+		stream.on('end',function() {callback({success:true,checksum:hash.digest('hex')});});
+		stream.on('error',function(err) {callback({success:false,error:err.message});});
+	}
 	function get_file_stats(path) {
 		var stats=fs.statSync(path);
 		if (!stats) return null;
@@ -322,30 +282,6 @@ function FileSystemClient() {
 	function is_valid_data_path(path) {
 		if (!path) return false;
 		return true;
-	}
-	function read_text_file(path,callback) {
-		fs.readFile(path,'utf8',function(err,txt) {
-			if (err) callback({success:false,error:err.message});
-			else callback({success:true,text:txt});
-		});
-	}
-	function write_text_file(path,text,callback) {
-		fs.writeFile(path,text,'utf8',function(err) {
-			if (err) callback({success:false,error:err.message});
-			else callback({success:true});
-		});
-	}
-	function read_binary_file(path,callback) {
-		fs.readFile(path,null,function(err,data) {
-			if (err) callback({success:false,error:err.message});
-			else callback({success:true,data:data});
-		});
-	}
-	function write_binary_file(path,text,callback) {
-		fs.writeFile(path,text,null,function(err) {
-			if (err) callback({success:false,error:err.message});
-			else callback({success:true});
-		});
 	}
 	function remove_file(path,callback) {
 		fs.unlink(path,function(err) {
