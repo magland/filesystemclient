@@ -181,10 +181,10 @@ function FileSystemClient() {
 			set_file_checksum(request.path,request.checksum,callback);
 		}
 		else if (command=='removeFile') {
-			remove_file(_data_path+'/'+request.path,callback);
+			remove_file(m_data_path+'/'+request.path,callback);
 		}
 		else if (command=='readDir') {
-			read_dir(_data_path+'/'+request.path,callback);
+			read_dir(m_data_path+'/'+request.path,callback);
 		}
 		else if (command=='updateFileSystemSource') {
 			var spawn=require('child_process').spawn;
