@@ -180,13 +180,11 @@ function FileSystemClient() {
 		else if (command=='setFileChecksum') {
 			set_file_checksum(request.path,request.checksum,callback);
 		}
-		else if (command=='readDir') {
-			callback({success:false,error:'readDir not yet implemented'});
-			//get_file_names(request,callback);
-			
-		}
 		else if (command=='removeFile') {
 			remove_file(_data_path+'/'+request.path,callback);
+		}
+		else if (command=='readDir') {
+			read_dir(_data_path+'/'+request.path,callback);
 		}
 		else if (command=='updateFileSystemSource') {
 			var spawn=require('child_process').spawn;
@@ -211,6 +209,24 @@ function FileSystemClient() {
 			callback({success:false,error:'Unrecognized or missing server request command: '+command});
 		}
 	}	
+	function read_dir(path,callback) {
+		var tmp;
+		try {
+			tmp=fs.readDirSync(path);
+		}
+		catch(err) {
+			callback({files:[],dirs:[]});
+			return;
+		}
+		var files=[],dirs=[];
+		for (var i=0; i<tmp.length; i++) {
+			if (fs.statSync(path+'/'+tmp[i]).isFile()) {
+				files.push(tmp[i]);
+			}
+			else dirs.push(tmp[i]);
+		}
+		callback({file:files,dirs:dirs});
+	}
 	function get_file_path(str) {
 		if (!str) return '';
 		var ind=str.lastIndexOf('/');
