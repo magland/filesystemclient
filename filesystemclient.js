@@ -183,6 +183,7 @@ function FileSystemClient() {
 		else if (command=='readDir') {
 			callback({success:false,error:'readDir not yet implemented'});
 			//get_file_names(request,callback);
+			
 		}
 		else if (command=='removeFile') {
 			remove_file(_data_path+'/'+request.path,callback);
