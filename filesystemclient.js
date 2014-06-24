@@ -215,7 +215,7 @@ function FileSystemClient() {
 			tmp=fs.readDirSync(path);
 		}
 		catch(err) {
-			callback({files:[],dirs:[]});
+			callback({success:false,files:[],dirs:[],error:err.message});
 			return;
 		}
 		var files=[],dirs=[];
@@ -225,7 +225,7 @@ function FileSystemClient() {
 			}
 			else dirs.push(tmp[i]);
 		}
-		callback({file:files,dirs:dirs});
+		callback({success:true,files:files,dirs:dirs,debug_path:path});
 	}
 	function get_file_path(str) {
 		if (!str) return '';
